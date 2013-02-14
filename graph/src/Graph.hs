@@ -82,22 +82,15 @@ main = withSocketsDo $ do
   -- Variables used for communication between callbacks.
   graphData <- newIORef emptyGraph
   uiState <- newIORef startUiState
-  glLock <- newMVar ()
 
   let -- A helper to shorten callback declarations...
       cbv $== cb = cbv $= Just cb
-      -- Lock helper
-      glProtect act = do
-        takeMVar glLock
-        res <- act
-        putMVar glLock ()
-        return res
 
   -- The current state is redrawn whenever needed.
-  displayCallback $= glProtect (displayGraph uiState graphData)
+  displayCallback $= displayGraph uiState graphData
 
   -- Window size needs to be monitored only to adjust the viewport.
-  reshapeCallback $== \size -> glProtect $ do
+  reshapeCallback $== \size -> do
     viewport $= (Position 0 0,size)
     matrixMode $= Projection
     loadIdentity
@@ -108,7 +101,7 @@ main = withSocketsDo $ do
 
   -- If the mouse is moved, we find out which cost centre it is
   -- hovering over, and refresh the display if there is a change.
-  passiveMotionCallback $== \pos -> glProtect $ do
+  passiveMotionCallback $== \pos -> do
     -- Note: maybe we want to use colour index mode to make colour
     -- picking easier, but it's not likely, since it can put an
     -- unpredictable limit on the number of colours we can use, and
@@ -147,7 +140,7 @@ main = withSocketsDo $ do
       -- Looping as long as the other process is running.
       _ <- forkIO $ fix $ \consume -> do
         prof <- takeMVar profData
-        keepGoing <- glProtect $ accumGraph graphData prof
+        keepGoing <- accumGraph graphData prof
         when keepGoing consume
 
       mainLoop
