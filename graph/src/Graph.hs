@@ -83,6 +83,11 @@ main = withSocketsDo $ do
   graphData <- newIORef emptyGraph
   uiState <- newIORef startUiState
 
+  -- Only the main thread directly calls GLUT/OpenGL functions.
+  -- Other threads can request the main thread to perform
+  -- an IO action by putting it into this MVar.
+  glOperationVar <- newEmptyMVar
+
   let -- A helper to shorten callback declarations...
       cbv $== cb = cbv $= Just cb
 
@@ -98,6 +103,15 @@ main = withSocketsDo $ do
     scale2 2 2
     matrixMode $= Modelview 0
     postRedisplay Nothing
+
+  -- Perform operations requested by other threads.
+  let timerCallback = do
+        req <- tryTakeMVar glOperationVar
+        case req of
+          Just r -> r >> timerCallback
+          Nothing -> addTimerCallback timerMs timerCallback
+      timerMs = 50
+  addTimerCallback timerMs timerCallback
 
   -- If the mouse is moved, we find out which cost centre it is
   -- hovering over, and refresh the display if there is a change.
@@ -140,8 +154,8 @@ main = withSocketsDo $ do
       -- Looping as long as the other process is running.
       _ <- forkIO $ fix $ \consume -> do
         prof <- takeMVar profData
-        keepGoing <- accumGraph graphData prof
-        when keepGoing consume
+        putMVar glOperationVar $ accumGraph graphData prof
+        when (prof /= SinkStop) consume
 
       mainLoop
 
